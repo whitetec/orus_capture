@@ -4,7 +4,7 @@ import os
 import cv2
 import numpy as np
 import threading
-from tkinter import Tk, Label, Button, filedialog, StringVar, IntVar, Entry, OptionMenu, Checkbutton, Canvas, Scrollbar, Text
+from tkinter import Tk, Label, Button, filedialog, StringVar, IntVar, Entry, OptionMenu, Checkbutton, Scrollbar, Text
 from tkinter.ttk import Frame
 from datetime import datetime
 import pytz
@@ -89,6 +89,7 @@ class OrusApp:
         preview_frame = Frame(frame)
         preview_frame.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
 
+        # Inicializar el widget de vista previa
         self.preview_label = Label(preview_frame, text="Vista previa del monitor seleccionado")
         self.preview_label.pack(fill="both", expand=True)
 
@@ -103,6 +104,7 @@ class OrusApp:
         self.status_console.pack(side="left", fill="both", expand=True)
         scrollbar.config(command=self.status_console.yview)
 
+        # Actualizar la vista previa
         self.update_preview()
 
     def set_status(self, message, color="black"):
@@ -170,19 +172,18 @@ class OrusApp:
             cv2.imwrite(main_path, screenshot)
 
             # Subir captura principal a S3
-            if self.upload_to_s3.get():
-                self.set_status("Subiendo captura principal al bucket...", "blue")
-                s3_main_key = f"{node_name}/{timestamp}/main/{main_filename}"
-                upload_to_s3(main_path, BUCKET_NAME, s3_main_key)
-
-            # Dividir en 3x3 y guardar recortes
-            height, width, _ = screenshot.shape
-            segment_height, segment_width = height // 3, width // 3
-
-            self.set_status("Generando y subiendo recortes...", "blue")
-
             recorte_tasks = []
             with ThreadPoolExecutor() as executor:
+                if self.upload_to_s3.get():
+                    self.set_status("Subiendo captura principal al bucket...", "blue")
+                    s3_main_key = f"{node_name}/{timestamp}/main/{main_filename}"
+                    executor.submit(upload_to_s3, main_path, BUCKET_NAME, s3_main_key)
+
+                # Dividir en 3x3 y guardar recortes
+                height, width, _ = screenshot.shape
+                segment_height, segment_width = height // 3, width // 3
+
+                self.set_status("Generando y subiendo recortes...", "blue")
                 for i, (row, col) in enumerate([(r, c) for r in range(3) for c in range(3)], start=1):
                     # Crear carpeta para el segmento
                     stream_folder = os.path.join(base_path, f"stream_{i:03d}")
@@ -206,12 +207,16 @@ class OrusApp:
                     # Subir segmento a S3
                     if self.upload_to_s3.get():
                         s3_key = f"{node_name}/{timestamp}/stream_{i:03d}/{stream_filename}"
-                        recorte_tasks.append(executor.submit(upload_to_s3, stream_path, BUCKET_NAME, s3_key))
+                        task = executor.submit(upload_to_s3, stream_path, BUCKET_NAME, s3_key)
+                        recorte_tasks.append((task, stream_path))
 
-            # Esperar a que todas las subidas terminen
-            for task in recorte_tasks:
-                task.result()
+            # Esperar a que todas las subidas terminen y eliminar archivos locales
+            for task, path in recorte_tasks:
+                task.result()  # Esperar la finalización de la subida
+                os.remove(path)  # Eliminar el archivo local
 
+            # Eliminar el archivo principal después de la subida
+            os.remove(main_path)
             self.set_status("Proceso completado. Todos los archivos se han guardado y subido correctamente.", "green")
 
         except Exception as e:
