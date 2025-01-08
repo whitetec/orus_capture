@@ -1,0 +1,6 @@
+boto3
+numpy
+opencv-python
+mss
+Pillow
+pytz
