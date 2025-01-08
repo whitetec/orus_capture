@@ -17,7 +17,7 @@ Aplicación para capturar pantallas, dividirlas en recortes 3x3 y almacenarlas l
 
 1. Clona el repositorio:
 
-       git clone https://github.com/tu-repositorio/orus-capture.git
+       git clone https://github.com/whitetec/orus_capture.git
        cd orus-capture
 
 Instala las dependencias:
